@@ -1,27 +1,41 @@
 // @flow
-import {ipcRenderer, remote} from 'electron'
 
 /**
  * preload scripts can only load modules that have previously been loaded
  * in the main thread.
  */
+let remote = require('electron').remote
+let ipcRenderer = require('electron').ipcRenderer
+const send = ipcRenderer.send
 const app = remote.require('electron').app
 const webFrame = require('electron').webFrame
 const clipboard = remote.require('electron').clipboard
-const PreloadImports = remote.require('./PreloadImports.js').default
-const lang = PreloadImports.lang
+const {Request, lang} = remote.require('./PreloadImports.js').default
 const Menu = remote.Menu
 const MenuItem = remote.MenuItem
+const currentWindowID = remote.getCurrentWindow().id
 
 /**
  * create the context menu
  * @type {Electron.Menu}
  */
 const contextMenu = new Menu()
+let openContextMenu = () => {}
 let pasteItem, copyItem, copyLinkItem: MenuItem
 let hoverUrl: string = "" // for the link popup
 let urlToCopy: string = "" // for the context menu
+let linkToolTip = null
+ipcRenderer
+	.on(`${currentWindowID}`, (ev, msg) => {
+		window.tutao.nativeApp.handleMessageObject(msg)
+	})
+	.on('setup-context-menu', setupContextMenu)
+	.on('set-zoom-factor', setZoomFactor)
+	.on('open-context-menu', (e, params) => openContextMenu(e, params))
 
+// remove functionality that's not needed anymore
+remote = undefined
+ipcRenderer = undefined
 
 // copy function
 function copy(copyLink: boolean) {
@@ -48,30 +62,23 @@ function setupContextMenu() {
 		click() { document.execCommand('redo') }
 	}))
 
-	ipcRenderer.on('open-context-menu', (e, params) => {
+	// overwrite noop since everything's initialized now
+	openContextMenu = (e, params) => {
 		console.log(params[0])
 		const linkURL = params[0].linkURL
 		copyLinkItem.enabled = !!linkURL
 		pasteItem.enabled = clipboard.readText().length > 0
 		copyItem.enabled = window.getSelection().toString().length > 0
 		urlToCopy = linkURL
-		contextMenu.popup({window: remote.getCurrentWindow()})
-	})
+		contextMenu.popup()
+	}
 }
 
 function setZoomFactor(ev, newFactor) {
 	webFrame.setZoomFactor(newFactor)
 }
 
-ipcRenderer
-	.on(`${remote.getCurrentWindow().id}`, (ev, msg) => {
-		window.tutao.nativeApp.handleMessageObject(msg)
-	})
-	.on('setup-context-menu', setupContextMenu)
-	.on('set-zoom-factor', setZoomFactor)
-
 // href URL reveal
-let linkToolTip
 window.addEventListener('mouseover', (e) => {
 	// if there are nested elements like <strong/> in the link element,
 	// we may not get a mouseover or mouseout for the actual <a/>, so
@@ -108,7 +115,7 @@ window.addEventListener('mouseup', e => {
 	* not search the next result for enter key events (otherwise we couldn't type newlines while the overlay is open)
 	*/
 	if (e.target.id === "search-overlay-input") return
-	window.tutao.nativeApp.invokeNative(new PreloadImports.Request("setSearchOverlayState", [false, true]))
+	window.tutao.nativeApp.invokeNative(new Request("setSearchOverlayState", [false, true]))
 })
 
 // needed to help the MacOs client to distinguish between Cmd+Arrow to navigate the history
@@ -139,11 +146,11 @@ window.onmousewheel = (e) => {
 // window.focus() doesn't seem to be working right now, so we're replacing it
 // https://github.com/electron/electron/issues/8969#issuecomment-288024536
 window.focus = () => {
-	window.tutao.nativeApp.invokeNative(new PreloadImports.Request('showWindow', []))
+	window.tutao.nativeApp.invokeNative(new Request('showWindow', []))
 }
 
 window.nativeApp = {
-	invoke: (msg: string) => ipcRenderer.send(`${remote.getCurrentWindow().id}`, msg),
+	invoke: (msg: string) => send(`${currentWindowID}`, msg),
 	getVersion: () => app.getVersion()
 }
 

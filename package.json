@@ -17,7 +17,7 @@
 	"dependencies": {
 		"autolinker": "3.11.1",
 		"bluebird": "3.7.2",
-		"dompurify": "2.0.8",
+		"dompurify": "2.0.17",
 		"mithril": "2.0.4",
 		"qrcode-svg": "1.0.0",
 		"squire-rte": "1.9.0",
